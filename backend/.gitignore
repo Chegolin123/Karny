@@ -1,0 +1,6 @@
+# C:\OSPanel\domains\karny\backend\.gitignore
+
+node_modules/
+.env
+.DS_Store
+*.log
