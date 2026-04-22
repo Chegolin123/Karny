@@ -1,6 +1,6 @@
 // C:\OSPanel\domains\karny\frontend\src\pages\EventPage.jsx
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useTheme } from '../components/common/ThemeProvider'
 import * as api from '../api'
@@ -12,7 +12,6 @@ import TimeVoting from '../components/room/TimeVoting'
 import EditEventModal from '../components/room/EditEventModal'
 import AttendeesModal from '../components/room/AttendeesModal'
 
-// Форматирование даты
 function formatEventDate(dateStr) {
   if (!dateStr) return 'Время обсуждается'
   const date = new Date(dateStr)
@@ -39,11 +38,12 @@ export default function EventPage() {
   const [error, setError] = useState(null)
   const [actionLoading, setActionLoading] = useState(false)
   
-  // Модальные окна
   const [showEditModal, setShowEditModal] = useState(false)
   const [showAttendeesModal, setShowAttendeesModal] = useState(false)
   const [showToast, setShowToast] = useState(false)
   const [toastMessage, setToastMessage] = useState('')
+  
+  const wsRef = useRef(null)
   
   const currentUserId = api.getCurrentUserId()
   const isOwner = room?.owner_id == currentUserId
@@ -52,6 +52,30 @@ export default function EventPage() {
 
   useEffect(() => {
     loadData()
+    
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const host = window.location.host
+    const ws = new WebSocket(`${protocol}//${host}/chat?roomId=${roomId}&userId=${currentUserId}`)
+    
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        
+        if (data.type === 'event_time_selected' && data.eventId == eventId) {
+          loadData()
+        }
+      } catch (error) {
+        console.error('Ошибка WebSocket:', error)
+      }
+    }
+    
+    wsRef.current = ws
+    
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close()
+      }
+    }
   }, [roomId, eventId])
 
   const loadData = async () => {
@@ -59,11 +83,9 @@ export default function EventPage() {
       setLoading(true)
       setError(null)
       
-      // Загружаем данные комнаты
       const roomData = await api.getRoom(roomId)
       setRoom(roomData.room)
       
-      // Находим событие
       const eventData = roomData.events.find(e => e.id == eventId)
       if (!eventData) {
         setError('Событие не найдено')
@@ -71,11 +93,9 @@ export default function EventPage() {
       }
       setEvent(eventData)
       
-      // Загружаем участников события
       const attendeesData = await api.getEventAttendees(roomId, eventId)
       setAttendees(attendeesData)
       
-      // Загружаем статус текущего пользователя
       const statusData = await api.getAttendeeStatus(roomId, eventId)
       setUserStatus(statusData.status)
       
@@ -186,7 +206,6 @@ export default function EventPage() {
     <div className={`h-screen w-full max-w-full overflow-hidden relative flex flex-col ${darkMode ? 'bg-[#0f0f13]' : 'bg-[#fafafa]'}`}>
       <Toast message={toastMessage} show={showToast} darkMode={darkMode} />
       
-      {/* Шапка - фиксированная */}
       <header className={`flex-shrink-0 ${darkMode ? 'bg-[#1a1a1e] border-b border-[#2a2a30]' : 'bg-white border-b border-gray-200'}`}>
         <div className="max-w-2xl mx-auto px-4 py-3">
           <div className="flex items-center gap-3">
@@ -224,10 +243,8 @@ export default function EventPage() {
         </div>
       </header>
       
-      {/* Контент - скроллится */}
       <div className="flex-1 min-h-0 overflow-y-auto">
         <main className="max-w-2xl mx-auto px-4 py-4">
-          {/* Описание */}
           {event?.description && (
             <div className={`mb-6 p-4 rounded-xl ${darkMode ? 'bg-[#1a1a1e]' : 'bg-white border border-gray-200'}`}>
               <h2 className={`text-sm font-medium mb-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
@@ -239,7 +256,6 @@ export default function EventPage() {
             </div>
           )}
           
-          {/* Дата и время */}
           <div className={`mb-6 p-4 rounded-xl ${darkMode ? 'bg-[#1a1a1e]' : 'bg-white border border-gray-200'}`}>
             <h2 className={`text-sm font-medium mb-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
               {event?.time_voting_enabled ? 'Голосование за время' : 'Дата и время'}
@@ -255,7 +271,6 @@ export default function EventPage() {
             )}
           </div>
           
-          {/* Голосование за время */}
           {event?.time_voting_enabled && (
             <div className="mb-6">
               <TimeVoting 
@@ -268,7 +283,6 @@ export default function EventPage() {
             </div>
           )}
           
-          {/* Участники */}
           <div className={`mb-6 p-4 rounded-xl ${darkMode ? 'bg-[#1a1a1e]' : 'bg-white border border-gray-200'}`}>
             <div className="flex items-center justify-between mb-3">
               <h2 className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
@@ -303,7 +317,6 @@ export default function EventPage() {
               </div>
             </div>
             
-            {/* Аватарки первых 5 участников */}
             {attendees.going.length > 0 && (
               <div className="flex items-center mt-4">
                 <div className="flex -space-x-2">
@@ -320,7 +333,6 @@ export default function EventPage() {
             )}
           </div>
           
-          {/* Кнопки действий */}
           <div className="flex gap-3 mb-6">
             <button
               onClick={() => handleAttend('going')}
@@ -345,7 +357,6 @@ export default function EventPage() {
             </button>
           </div>
           
-          {/* Кнопки управления */}
           {canEdit && (
             <div className="space-y-2">
               <button
@@ -376,7 +387,6 @@ export default function EventPage() {
         </main>
       </div>
       
-      {/* Модальные окна */}
       <EditEventModal
         show={showEditModal}
         onClose={() => setShowEditModal(false)}

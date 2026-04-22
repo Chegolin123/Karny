@@ -1,6 +1,6 @@
 // C:\OSPanel\domains\karny\frontend\src\pages\RoomPage.jsx
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { useRoom } from '../hooks/useRoom'
 import { useTheme } from '../components/common/ThemeProvider'
@@ -50,7 +50,34 @@ export default function RoomPage() {
   const [actionLoading, setActionLoading] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
 
+  const wsRef = useRef(null)
   const currentUserId = api.getCurrentUserId()
+
+  useEffect(() => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const host = window.location.host
+    const ws = new WebSocket(`${protocol}//${host}/chat?roomId=${id}&userId=${currentUserId}`)
+    
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        
+        if (data.type === 'event_time_selected') {
+          loadRoomData()
+        }
+      } catch (error) {
+        console.error('Ошибка WebSocket:', error)
+      }
+    }
+    
+    wsRef.current = ws
+    
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close()
+      }
+    }
+  }, [id, currentUserId])
 
   const showNotification = (message) => {
     setToastMessage(message)
@@ -95,7 +122,7 @@ export default function RoomPage() {
   const handleCreateEvent = async (name, eventDate, description, timeVotingEnabled) => {
     setActionLoading(true)
     try {
-      await createEvent(name, eventDate, description, timeVotingEnabled)
+      await api.createEvent(id, name, eventDate, description, timeVotingEnabled)
       setShowCreateModal(false)
       showNotification('Событие создано')
       await loadRoomData()
@@ -246,7 +273,6 @@ export default function RoomPage() {
         </PullToRefresh>
       </div>
 
-      {/* Кнопка вступления для не-участников */}
       {!isMember && (
         <div className="sticky bottom-4 mx-4 z-30">
           <div className="max-w-2xl mx-auto">

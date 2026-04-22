@@ -39,14 +39,9 @@ export default function HomePage() {
   const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
+    // Загружаем публичные комнаты при первом рендере
     loadPublicRooms()
   }, [])
-
-  useEffect(() => {
-    if (activeTab === 'public') {
-      loadPublicRooms()
-    }
-  }, [activeTab])
 
   const loadPublicRooms = async () => {
     setPublicRoomsLoading(true)
@@ -73,6 +68,7 @@ export default function HomePage() {
       await createRoom(name, isPrivate, password)
       setShowCreateModal(false)
       notifySuccess(`Комната «${name}» создана!`)
+      await loadPublicRooms() // Обновляем публичные комнаты
     } catch (err) {
       notifyError(err.message)
     } finally {
@@ -87,6 +83,8 @@ export default function HomePage() {
       setShowJoinModal(false)
       setActiveTab('my')
       notifySuccess(result.message || 'Вы присоединились к комнате!')
+      await loadData() // Обновляем мои комнаты
+      await loadPublicRooms() // Обновляем публичные
     } catch (err) {
       throw err
     } finally {
@@ -187,10 +185,9 @@ export default function HomePage() {
             
             <div className="flex gap-2 mb-4">
               <button
-                onClick={async () => {
+                onClick={() => {
                   setActiveTab('my')
                   setSearchQuery('')
-                  await loadData()
                 }}
                 className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition-colors ${
                   activeTab === 'my'
@@ -205,10 +202,12 @@ export default function HomePage() {
                 🏠 Мои ({myRooms.length})
               </button>
               <button
-                onClick={async () => {
+                onClick={() => {
                   setActiveTab('public')
                   setSearchQuery('')
-                  await loadPublicRooms()
+                  if (publicRooms.length === 0) {
+                    loadPublicRooms()
+                  }
                 }}
                 className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition-colors ${
                   activeTab === 'public'

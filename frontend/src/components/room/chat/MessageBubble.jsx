@@ -1,10 +1,9 @@
 // C:\OSPanel\domains\karny\frontend\src\components\room\chat\MessageBubble.jsx
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import MemberAvatar from '../MemberAvatar'
 import MessageContextMenu from './MessageContextMenu'
 
-// Форматирование времени — всегда показывает часы:минуты
 function formatTime(timestamp) {
   if (!timestamp) return ''
   const date = new Date(timestamp)
@@ -32,36 +31,75 @@ export default function MessageBubble({
   const [swipeOffset, setSwipeOffset] = useState(0)
   const [isSwiping, setIsSwiping] = useState(false)
   const startX = useRef(0)
+  
+  // Для долгого нажатия на мобильных
+  const longPressTimer = useRef(null)
+  const touchStartPos = useRef({ x: 0, y: 0 })
 
+  // Обработчик контекстного меню (десктоп)
   const handleContextMenu = (e) => {
     e.preventDefault()
+    openContextMenu(e.clientX, e.clientY)
+  }
+
+  // Открытие контекстного меню
+  const openContextMenu = (x, y) => {
     setContextMenu({
       show: true,
-      x: e.clientX,
-      y: e.clientY
+      x,
+      y
     })
   }
 
-  const handleTouchStart = (e) => {
-    startX.current = e.touches[0].clientX
+  // Обработчики для мобильных (долгое нажатие)
+  const handleTouchStart = useCallback((e) => {
+    const touch = e.touches[0]
+    touchStartPos.current = { x: touch.clientX, y: touch.clientY }
+    startX.current = touch.clientX
     setIsSwiping(true)
-  }
+    
+    // Запускаем таймер для долгого нажатия
+    longPressTimer.current = setTimeout(() => {
+      openContextMenu(touchStartPos.current.x, touchStartPos.current.y)
+      setIsSwiping(false)
+      setSwipeOffset(0)
+    }, 500) // 500ms для долгого нажатия
+  }, [])
 
-  const handleTouchMove = (e) => {
+  const handleTouchMove = useCallback((e) => {
     if (!isSwiping) return
-    const diff = e.touches[0].clientX - startX.current
+    
+    // Отменяем долгое нажатие при движении
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+    
+    const touch = e.touches[0]
+    const diff = touch.clientX - startX.current
+    
+    // Только свайп вправо для ответа
     if (diff > 0) {
       setSwipeOffset(Math.min(diff, 80))
     }
-  }
+  }, [isSwiping])
 
-  const handleTouchEnd = () => {
+  const handleTouchEnd = useCallback(() => {
+    // Отменяем таймер долгого нажатия
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+    
     setIsSwiping(false)
+    
+    // Если был достаточный свайп — ответить
     if (swipeOffset > 50 && onReply) {
       onReply(message)
     }
+    
     setSwipeOffset(0)
-  }
+  }, [swipeOffset, onReply, message])
 
   const handleEditSubmit = (e) => {
     e.preventDefault()
@@ -71,12 +109,18 @@ export default function MessageBubble({
     setIsEditing(false)
   }
 
+  const handleKeyDown = (e) => {
+    if (e.key === 'Escape') {
+      setIsEditing(false)
+      setEditContent(message.content)
+    }
+  }
+
   const transformStyle = {
     transform: `translateX(${swipeOffset}px)`,
     transition: isSwiping ? 'none' : 'transform 0.2s ease-out'
   }
 
-  // Статус сообщения (галочки)
   const getMessageStatus = () => {
     if (!isOwn) return null
     
@@ -115,11 +159,19 @@ export default function MessageBubble({
   return (
     <>
       <div 
-        className={`flex items-end gap-2 ${isOwn ? 'justify-end' : 'justify-start'} group relative`}
+        className={`flex items-end gap-2 ${isOwn ? 'justify-end' : 'justify-start'} group relative select-none`}
         onContextMenu={handleContextMenu}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
+        onTouchCancel={() => {
+          if (longPressTimer.current) {
+            clearTimeout(longPressTimer.current)
+            longPressTimer.current = null
+          }
+          setIsSwiping(false)
+          setSwipeOffset(0)
+        }}
         style={transformStyle}
       >
         {!isOwn && (
@@ -156,6 +208,7 @@ export default function MessageBubble({
                   type="text"
                   value={editContent}
                   onChange={(e) => setEditContent(e.target.value)}
+                  onKeyDown={handleKeyDown}
                   className={`px-3 py-2 rounded-xl text-sm outline-none ${
                     darkMode 
                       ? 'bg-[#2a2a30] text-white border border-[#3f3f46]' 
@@ -221,6 +274,20 @@ export default function MessageBubble({
         </div>
         
         {isOwn && <div className="w-8 h-8 flex-shrink-0" />}
+        
+        {/* Индикатор свайпа */}
+        {swipeOffset > 0 && (
+          <div 
+            className="absolute left-0 top-0 bottom-0 flex items-center px-2 pointer-events-none"
+            style={{ opacity: Math.min(swipeOffset / 30, 1) }}
+          >
+            <div className={`p-2 rounded-full ${darkMode ? 'bg-[#8b5cf6]' : 'bg-[#6d28d9]'}`}>
+              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+              </svg>
+            </div>
+          </div>
+        )}
       </div>
 
       <MessageContextMenu

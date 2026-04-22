@@ -4,8 +4,11 @@ const WebSocket = require('ws');
 const { pool } = require('./db');
 const { notifyOfflineMembers, updateLastSeen, resetNotificationCounters } = require('./services/chatNotificationService');
 
+let wssInstance = null;
+
 function setupWebSocket(server) {
   const wss = new WebSocket.Server({ server });
+  wssInstance = wss;
 
   const rooms = new Map();
   const clients = new Map();
@@ -19,6 +22,9 @@ function setupWebSocket(server) {
       ws.close(1008, 'Missing roomId or userId');
       return;
     }
+
+    ws.roomId = roomId;
+    ws.userId = userId;
 
     try {
       const connection = await pool.getConnection();
@@ -124,7 +130,6 @@ function setupWebSocket(server) {
         
         if (!clientInfo) return;
 
-        // Обычное сообщение
         if (message.type === 'message') {
           const { content, reply_to_id } = message;
           
@@ -192,7 +197,6 @@ function setupWebSocket(server) {
           }
         }
         
-        // Редактирование сообщения
         if (message.type === 'edit_message') {
           const { messageId, content } = message;
           const clientInfo = clients.get(ws);
@@ -223,7 +227,6 @@ function setupWebSocket(server) {
           }
         }
         
-        // Удаление сообщения
         if (message.type === 'delete_message') {
           const { messageId } = message;
           const clientInfo = clients.get(ws);
@@ -259,7 +262,6 @@ function setupWebSocket(server) {
           }
         }
         
-        // Закрепление сообщения
         if (message.type === 'pin_message') {
           const { messageId } = message;
           const clientInfo = clients.get(ws);
@@ -274,15 +276,7 @@ function setupWebSocket(server) {
             
             const isOwner = rooms[0]?.owner_id == clientInfo.userId;
             
-            console.log('📌 Pin message request:', {
-              messageId,
-              userId: clientInfo.userId,
-              roomId: clientInfo.roomId,
-              isOwner
-            });
-            
             if (!isOwner) {
-              console.log('❌ Отказано: пользователь не админ');
               return;
             }
             
@@ -306,8 +300,6 @@ function setupWebSocket(server) {
                 );
               }
               
-              console.log(`✅ Сообщение ${messageId} ${newState ? 'закреплено' : 'откреплено'}`);
-              
               broadcastToRoom(clientInfo.roomId, {
                 type: 'message_pinned',
                 messageId,
@@ -319,7 +311,6 @@ function setupWebSocket(server) {
           }
         }
         
-        // Печатает
         if (message.type === 'typing') {
           const clientInfo = clients.get(ws);
           if (clientInfo) {
@@ -333,7 +324,6 @@ function setupWebSocket(server) {
           }
         }
         
-        // Отметка о прочтении
         if (message.type === 'mark_read') {
           const { messageId } = message;
           const clientInfo = clients.get(ws);
@@ -404,4 +394,9 @@ function setupWebSocket(server) {
   return wss;
 }
 
+function getWebSocketServer() {
+  return wssInstance;
+}
+
 module.exports = setupWebSocket;
+module.exports.getWebSocketServer = getWebSocketServer;

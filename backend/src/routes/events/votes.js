@@ -20,7 +20,6 @@ router.post('/vote', async (req, res) => {
     const connection = await pool.getConnection();
     
     try {
-      // Проверяем, существует ли вариант
       const [options] = await connection.execute(
         'SELECT id FROM event_time_options WHERE id = ? AND event_id = ?',
         [optionId, eventId]
@@ -30,14 +29,12 @@ router.post('/vote', async (req, res) => {
         return res.status(404).json({ error: 'Вариант не найден' });
       }
       
-      // Проверяем, голосовал ли уже пользователь
       const [existing] = await connection.execute(
         'SELECT * FROM event_time_votes WHERE option_id = ? AND user_id = ?',
         [optionId, userId]
       );
       
       if (existing.length > 0) {
-        // Снимаем голос
         await connection.execute(
           'DELETE FROM event_time_votes WHERE option_id = ? AND user_id = ?',
           [optionId, userId]
@@ -49,7 +46,6 @@ router.post('/vote', async (req, res) => {
           message: 'Голос снят' 
         });
       } else {
-        // Добавляем голос
         await connection.execute(
           'INSERT INTO event_time_votes (option_id, user_id) VALUES (?, ?)',
           [optionId, userId]
@@ -84,7 +80,6 @@ router.post('/select-time', async (req, res) => {
     const connection = await pool.getConnection();
     
     try {
-      // Проверяем права
       const [rooms] = await connection.execute(
         'SELECT owner_id FROM rooms WHERE id = ?',
         [roomId]
@@ -106,7 +101,6 @@ router.post('/select-time', async (req, res) => {
         return res.status(403).json({ error: 'Только админ или создатель может выбрать время' });
       }
       
-      // Получаем выбранный вариант
       const [options] = await connection.execute(
         'SELECT proposed_date FROM event_time_options WHERE id = ? AND event_id = ?',
         [optionId, eventId]
@@ -116,22 +110,48 @@ router.post('/select-time', async (req, res) => {
         return res.status(404).json({ error: 'Вариант не найден' });
       }
       
-      // Обновляем событие
       await connection.execute(
         'UPDATE events SET event_date = ?, time_voting_enabled = FALSE WHERE id = ?',
         [options[0].proposed_date, eventId]
       );
       
-      // Удаляем все варианты голосования
       await connection.execute(
         'DELETE FROM event_time_options WHERE event_id = ?',
         [eventId]
       );
       
+      const [updatedEvents] = await connection.execute(
+        `SELECT e.*, u.first_name as creator_name,
+                (SELECT COUNT(*) FROM event_attendees ea WHERE ea.event_id = e.id AND ea.status = 'going') as going_count
+         FROM events e
+         JOIN users u ON e.created_by = u.id
+         WHERE e.id = ?`,
+        [eventId]
+      );
+      
+      const updatedEvent = updatedEvents[0];
+      
+      const { getWebSocketServer } = require('../../websocket');
+      const wss = getWebSocketServer();
+      
+      if (wss) {
+        wss.clients.forEach((client) => {
+          if (client.roomId === roomId && client.readyState === 1) {
+            client.send(JSON.stringify({
+              type: 'event_time_selected',
+              eventId: parseInt(eventId),
+              eventDate: options[0].proposed_date,
+              roomId: roomId
+            }));
+          }
+        });
+      }
+      
       res.json({ 
         success: true, 
         message: 'Время выбрано',
-        eventDate: options[0].proposed_date
+        eventDate: options[0].proposed_date,
+        event: updatedEvent
       });
       
     } finally {

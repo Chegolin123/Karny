@@ -68,7 +68,6 @@ export default function TimeVoting({ roomId, event, darkMode, isOwner, canEdit }
   }
 
   const handleSelectWinner = async (optionId) => {
-    // Находим выбранный вариант для отображения в подтверждении
     const option = options.find(o => o.id === optionId)
     const dateStr = formatDate(option.proposed_date)
     
@@ -80,8 +79,9 @@ export default function TimeVoting({ roomId, event, darkMode, isOwner, canEdit }
     setActionLoading(true)
     try {
       await api.selectWinningTime(roomId, event.id, optionId)
-      // Обновляем страницу чтобы показать выбранное время
-      window.location.reload()
+      setTimeout(() => {
+        window.location.reload()
+      }, 500)
     } catch (err) {
       alert(err.message)
       setWinningOptionId(null)
@@ -112,7 +112,6 @@ export default function TimeVoting({ roomId, event, darkMode, isOwner, canEdit }
     )
   }
 
-  // Находим лидирующий вариант (с наибольшим количеством голосов)
   const leadingOption = options.length > 0 
     ? options.reduce((max, opt) => opt.votes_count > max.votes_count ? opt : max, options[0])
     : null
@@ -157,7 +156,6 @@ export default function TimeVoting({ roomId, event, darkMode, isOwner, canEdit }
                     : 'bg-white border-gray-200'
                 }`}
               >
-                {/* Индикатор прогресса голосов */}
                 {leadingOption && leadingOption.votes_count > 0 && (
                   <div 
                     className={`absolute inset-y-0 left-0 ${
@@ -187,7 +185,6 @@ export default function TimeVoting({ roomId, event, darkMode, isOwner, canEdit }
                   </div>
                   
                   <div className="flex items-center gap-2">
-                    {/* Кнопка голосования */}
                     <button
                       onClick={() => handleVote(option.id)}
                       disabled={actionLoading}
@@ -204,7 +201,6 @@ export default function TimeVoting({ roomId, event, darkMode, isOwner, canEdit }
                       {option.user_voted ? '✓' : 'Голосовать'}
                     </button>
                     
-                    {/* Кнопка выбора победителя (только для админа/создателя) */}
                     {canEdit && (
                       <button
                         onClick={() => handleSelectWinner(option.id)}
@@ -219,7 +215,6 @@ export default function TimeVoting({ roomId, event, darkMode, isOwner, canEdit }
                       </button>
                     )}
                     
-                    {/* Кнопка удаления */}
                     {(canEdit || option.created_by === api.getCurrentUserId()) && (
                       <button
                         onClick={() => handleDeleteOption(option.id)}
@@ -243,14 +238,12 @@ export default function TimeVoting({ roomId, event, darkMode, isOwner, canEdit }
         </div>
       )}
       
-      {/* Подсказка для админа */}
       {canEdit && options.length > 0 && (
         <p className={`text-xs mt-3 text-center ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
           💡 Нажмите «✓ Выбрать», чтобы зафиксировать время и завершить голосование
         </p>
       )}
 
-      {/* Модалка добавления варианта */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50 animate-fadeIn">
           <div className={`w-full max-w-md rounded-t-2xl sm:rounded-2xl p-6 ${

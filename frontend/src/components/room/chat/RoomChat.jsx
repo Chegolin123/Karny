@@ -107,30 +107,43 @@ export default function RoomChat({ roomId, members, darkMode, autoScrollToBottom
       if (normalizedMsg.id) {
         const exists = prev.some(m => m.id === normalizedMsg.id)
         if (exists) {
+          console.log('📌 Сообщение уже существует, пропускаем:', normalizedMsg.id)
           return prev
         }
       }
       
       if (normalizedMsg.tempId) {
-        return [...prev, normalizedMsg]
+        console.log('📝 Добавляем временное сообщение:', normalizedMsg.tempId)
+        const newMessages = [...prev, normalizedMsg]
+        return newMessages.sort((a, b) => {
+          if (a.is_pinned && !b.is_pinned) return -1
+          if (!a.is_pinned && b.is_pinned) return 1
+          return new Date(a.created_at || a.timestamp) - new Date(b.created_at || b.timestamp)
+        })
       }
       
       const hasTemp = prev.some(m => m.tempId)
       if (hasTemp && normalizedMsg.userId === currentUserIdStr) {
         const updated = prev.map(m => {
           if (m.tempId && m.userId === currentUserIdStr && m.content === normalizedMsg.content) {
+            console.log('🔄 Заменяем временное сообщение на подтверждённое:', m.tempId, '→', normalizedMsg.id)
             return { ...normalizedMsg, tempId: undefined }
           }
           return m
         })
-        return updated
+        return updated.sort((a, b) => {
+          if (a.is_pinned && !b.is_pinned) return -1
+          if (!a.is_pinned && b.is_pinned) return 1
+          return new Date(a.created_at || a.timestamp) - new Date(b.created_at || b.timestamp)
+        })
       }
       
+      console.log('➕ Добавляем новое сообщение:', normalizedMsg.id)
       const newMessages = [...prev, normalizedMsg]
       return newMessages.sort((a, b) => {
         if (a.is_pinned && !b.is_pinned) return -1
         if (!a.is_pinned && b.is_pinned) return 1
-        return new Date(b.created_at || b.timestamp) - new Date(a.created_at || a.timestamp)
+        return new Date(a.created_at || a.timestamp) - new Date(b.created_at || b.timestamp)
       })
     })
   }, [normalizeMessage, currentUserIdStr])
@@ -148,6 +161,8 @@ export default function RoomChat({ roomId, members, darkMode, autoScrollToBottom
   }, [])
 
   const handleWebSocketMessage = useCallback((data) => {
+    console.log('📨 WebSocket message:', data.type, data)
+    
     if (data.type === 'message') {
       addMessage(data)
       if (!isInitialLoad) scrollToBottom()
@@ -174,7 +189,7 @@ export default function RoomChat({ roomId, members, darkMode, autoScrollToBottom
         return updated.sort((a, b) => {
           if (a.is_pinned && !b.is_pinned) return -1
           if (!a.is_pinned && b.is_pinned) return 1
-          return new Date(b.created_at) - new Date(a.created_at)
+          return new Date(a.created_at || a.timestamp) - new Date(b.created_at || b.timestamp)
         })
       })
     } else if (data.type === 'message_read') {
@@ -215,12 +230,19 @@ export default function RoomChat({ roomId, members, darkMode, autoScrollToBottom
       const normalizedMessages = data.messages.map(msg => normalizeMessage(msg))
       
       if (beforeId) {
-        setMessages(prev => [...normalizedMessages, ...prev])
+        setMessages(prev => {
+          const combined = [...normalizedMessages, ...prev]
+          return combined.sort((a, b) => {
+            if (a.is_pinned && !b.is_pinned) return -1
+            if (!a.is_pinned && b.is_pinned) return 1
+            return new Date(a.created_at || a.timestamp) - new Date(b.created_at || b.timestamp)
+          })
+        })
       } else {
         const sorted = normalizedMessages.sort((a, b) => {
           if (a.is_pinned && !b.is_pinned) return -1
           if (!a.is_pinned && b.is_pinned) return 1
-          return new Date(b.created_at) - new Date(a.created_at)
+          return new Date(a.created_at || a.timestamp) - new Date(b.created_at || b.timestamp)
         })
         setMessages(sorted)
         setHistoryLoaded(true)
@@ -292,6 +314,7 @@ export default function RoomChat({ roomId, members, darkMode, autoScrollToBottom
 
   const handleSendMessage = useCallback((content, replyToId = null) => {
     if (!connected) {
+      console.warn('⚠️ Нет подключения к чату')
       return false
     }
     
