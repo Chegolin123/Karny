@@ -16,12 +16,31 @@
     --danger: #dc2626;
   }
   
+  * {
+    box-sizing: border-box;
+  }
+  
+  html, body, #root {
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
+    position: relative;
+  }
+  
+  /* Предотвращение системного pull-to-refresh */
+  html, body {
+    overscroll-behavior-y: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  
   body {
     background-color: #fafafa;
     color: #18181b;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    margin: 0;
+    padding: 0;
   }
   
   body.dark {
@@ -47,27 +66,27 @@
   }
   
   body.dark .text-gray-900 {
-    color: #e4e4e7;
+    color: #f4f4f5;
   }
   
   body.dark .text-gray-800 {
-    color: #d4d4d8;
+    color: #e4e4e7;
   }
   
   body.dark .text-gray-700 {
-    color: #a1a1aa;
+    color: #d4d4d8;
   }
   
   body.dark .text-gray-600 {
-    color: #71717a;
+    color: #a1a1aa;
   }
   
   body.dark .text-gray-500 {
-    color: #52525b;
+    color: #71717a;
   }
   
   body.dark .text-gray-400 {
-    color: #3f3f46;
+    color: #52525b;
   }
   
   body.dark .border-gray-200 {
@@ -79,7 +98,7 @@
   }
   
   body.dark .hover\:bg-gray-50:hover {
-    background-color: #1a1a1e;
+    background-color: #2a2a30;
   }
   
   body.dark .bg-\[\#f5f3ff\] {
@@ -88,6 +107,56 @@
   
   body.dark .text-\[\#6d28d9\] {
     color: #a78bfa;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply px-4 py-3 bg-gradient-to-r from-[#4c1d95] to-[#6d28d9] text-white font-medium rounded-xl shadow-md hover:shadow-lg hover:from-[#5b21b6] hover:to-[#7c3aed] transition-all duration-200;
+  }
+  
+  .dark .btn-primary {
+    @apply from-[#6d28d9] to-[#8b5cf6] hover:from-[#7c3aed] hover:to-[#a78bfa];
+  }
+  
+  .btn-secondary {
+    @apply px-4 py-3 bg-white text-gray-800 font-medium rounded-xl border-2 border-gray-300 shadow-sm hover:bg-gray-50 hover:border-gray-400 transition-all duration-200;
+  }
+  
+  .dark .btn-secondary {
+    @apply bg-[#1a1a1e] text-white border-[#3f3f46] hover:bg-[#2a2a30] hover:border-[#52525b];
+  }
+  
+  .btn-danger {
+    @apply px-4 py-3 bg-red-500 text-white font-medium rounded-xl shadow-sm hover:bg-red-600 transition-all duration-200;
+  }
+  
+  .dark .btn-danger {
+    @apply bg-red-600 hover:bg-red-700;
+  }
+  
+  .card {
+    @apply bg-white border-2 border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200;
+  }
+  
+  .dark .card {
+    @apply bg-[#1a1a1e] border-[#2a2a30] hover:border-[#3f3f46];
+  }
+  
+  .input {
+    @apply w-full px-4 py-3 bg-white border-2 border-gray-300 rounded-xl text-base focus:outline-none focus:border-[#8b5cf6] focus:ring-2 focus:ring-[#8b5cf6]/30 transition-all duration-200;
+  }
+  
+  .dark .input {
+    @apply bg-[#2a2a30] border-[#3f3f46] text-white placeholder-gray-400 focus:border-[#a78bfa] focus:ring-[#a78bfa]/30;
+  }
+  
+  .modal {
+    @apply bg-white rounded-2xl p-6 shadow-2xl border border-gray-200;
+  }
+  
+  .dark .modal {
+    @apply bg-[#1a1a1e] border-[#2a2a30];
   }
 }
 
@@ -108,6 +177,28 @@
     }
   }
   
+  @keyframes slideOut {
+    from {
+      opacity: 1;
+      transform: translateX(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateX(100%);
+    }
+  }
+  
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateY(-20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
   .animate-fadeIn {
     animation: fadeIn 0.2s ease-out;
   }
@@ -116,7 +207,14 @@
     animation: slideUp 0.2s ease-out;
   }
   
-  /* Скрыть скроллбар, но оставить прокрутку */
+  .animate-slideOut {
+    animation: slideOut 0.2s ease-out forwards;
+  }
+  
+  .animate-slideIn {
+    animation: slideIn 0.3s ease-out;
+  }
+
   .scrollbar-hide {
     -ms-overflow-style: none;
     scrollbar-width: none;
@@ -125,12 +223,41 @@
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
+  
+  .no-horizontal-scroll {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+  
+  .break-word {
+    word-break: break-word;
+    overflow-wrap: break-word;
+  }
+  
+  .container-fixed {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+  
+  .overscroll-none {
+    overscroll-behavior: none;
+  }
+  
+  .overscroll-contain {
+    overscroll-behavior: contain;
+  }
+  
+  .pull-to-refresh-container {
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+  }
 }
 
-/* Кастомный скроллбар для остальных элементов (кроме чата) */
+/* Кастомный скроллбар */
 ::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -138,8 +265,8 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d4d4d8;
-  border-radius: 0;
+  background: #cbd5e1;
+  border-radius: 3px;
 }
 
 body.dark ::-webkit-scrollbar-thumb {
@@ -147,7 +274,7 @@ body.dark ::-webkit-scrollbar-thumb {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #a1a1aa;
+  background: #94a3b8;
 }
 
 body.dark ::-webkit-scrollbar-thumb:hover {

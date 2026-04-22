@@ -11,54 +11,46 @@ export function useTheme() {
 
 export default function ThemeProvider({ children }) {
   const { colorScheme } = useTelegram()
-  const [theme, setTheme] = useState('light')
-  const [userPreference, setUserPreference] = useState(null)
+  const [theme, setThemeState] = useState('system')
 
   useEffect(() => {
-    // Загружаем сохранённую тему
-    const savedTheme = localStorage.getItem('karny_theme')
-    
-    if (savedTheme) {
-      setTheme(savedTheme)
-      setUserPreference(savedTheme)
-    } else if (colorScheme) {
-      setTheme(colorScheme)
-    } else {
-      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-      setTheme(systemTheme)
+    const savedTheme = localStorage.getItem('karny_theme') || 'system'
+    setThemeState(savedTheme)
+  }, [])
+
+  const getActualTheme = () => {
+    if (theme === 'system') {
+      return colorScheme || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
     }
-  }, [colorScheme])
+    return theme
+  }
+
+  const actualTheme = getActualTheme()
 
   useEffect(() => {
-    // Применяем класс к body
-    if (theme === 'dark') {
+    if (actualTheme === 'dark') {
       document.body.classList.add('dark')
     } else {
       document.body.classList.remove('dark')
     }
-  }, [theme])
+  }, [actualTheme])
 
-  const toggleTheme = () => {
-    const newTheme = theme === 'light' ? 'dark' : 'light'
-    setTheme(newTheme)
-    setUserPreference(newTheme)
+  const setTheme = (newTheme) => {
+    setThemeState(newTheme)
     localStorage.setItem('karny_theme', newTheme)
   }
 
-  const resetToSystem = () => {
-    const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-    setTheme(systemTheme)
-    setUserPreference(null)
-    localStorage.removeItem('karny_theme')
+  const toggleTheme = () => {
+    const current = getActualTheme()
+    setTheme(current === 'light' ? 'dark' : 'light')
   }
 
   return (
     <ThemeContext.Provider value={{ 
-      theme, 
+      theme: actualTheme,
+      themePreference: theme,
       setTheme, 
-      toggleTheme, 
-      resetToSystem,
-      userPreference 
+      toggleTheme
     }}>
       {children}
     </ThemeContext.Provider>

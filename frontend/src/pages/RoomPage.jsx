@@ -16,8 +16,7 @@ import MembersList from '../components/room/MembersList'
 import EventsList from '../components/room/EventsList'
 import CreateEventModal from '../components/room/CreateEventModal'
 import EditRoomModal from '../components/room/EditRoomModal'
-import EditEventModal from '../components/room/EditEventModal'
-import AttendeesModal from '../components/room/AttendeesModal'
+import RoomSettingsModal from '../components/room/RoomSettingsModal'
 
 export default function RoomPage() {
   const { id } = useParams()
@@ -29,17 +28,14 @@ export default function RoomPage() {
     error,
     userAttendances,
     isOwner,
+    isMember,
     updateRoom,
     createEvent,
-    updateEvent,
     attendEvent,
-    deleteEvent,
     leaveRoom,
     deleteRoom,
-    canEditEvent,
-    canDeleteEvent,
-    canRemindEvent,
-    loadRoomData
+    loadRoomData,
+    joinPublicRoom
   } = useRoom(id)
 
   const { theme } = useTheme()
@@ -47,16 +43,14 @@ export default function RoomPage() {
 
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showEditRoomModal, setShowEditRoomModal] = useState(false)
-  const [showEditEventModal, setShowEditEventModal] = useState(false)
-  const [showAttendeesModal, setShowAttendeesModal] = useState(false)
-  const [selectedEvent, setSelectedEvent] = useState(null)
-  const [selectedEventForAttendees, setSelectedEventForAttendees] = useState(null)
-  const [attendeesFilter, setAttendeesFilter] = useState(null)
+  const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [copied, setCopied] = useState(false)
   const [showToast, setShowToast] = useState(false)
   const [toastMessage, setToastMessage] = useState('')
   const [actionLoading, setActionLoading] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+
+  const currentUserId = api.getCurrentUserId()
 
   const showNotification = (message) => {
     setToastMessage(message)
@@ -88,7 +82,9 @@ export default function RoomPage() {
     try {
       await updateRoom(name)
       setShowEditRoomModal(false)
+      setShowSettingsModal(false)
       showNotification('Комната обновлена')
+      await loadRoomData()
     } catch (err) {
       alert(err.message)
     } finally {
@@ -96,31 +92,13 @@ export default function RoomPage() {
     }
   }
 
-  const handleCreateEvent = async (name, eventDate, description) => {
+  const handleCreateEvent = async (name, eventDate, description, timeVotingEnabled) => {
     setActionLoading(true)
     try {
-      await createEvent(name, eventDate, description)
+      await createEvent(name, eventDate, description, timeVotingEnabled)
       setShowCreateModal(false)
       showNotification('Событие создано')
-    } catch (err) {
-      alert(err.message)
-    } finally {
-      setActionLoading(false)
-    }
-  }
-
-  const handleEditEvent = (event) => {
-    setSelectedEvent(event)
-    setShowEditEventModal(true)
-  }
-
-  const handleUpdateEvent = async (name, eventDate, description) => {
-    setActionLoading(true)
-    try {
-      await updateEvent(selectedEvent.id, name, eventDate, description)
-      setShowEditEventModal(false)
-      setSelectedEvent(null)
-      showNotification('Событие обновлено')
+      await loadRoomData()
     } catch (err) {
       alert(err.message)
     } finally {
@@ -132,41 +110,13 @@ export default function RoomPage() {
     setActionLoading(true)
     try {
       await attendEvent(eventId, status)
+      await loadRoomData()
+      showNotification(status === 'going' ? 'Вы идёте' : status === 'maybe' ? 'Возможно пойдёте' : 'Вы не идёте')
     } catch (err) {
       alert(err.message)
     } finally {
       setActionLoading(false)
     }
-  }
-
-  const handleDeleteEvent = async (eventId) => {
-    setActionLoading(true)
-    try {
-      await deleteEvent(eventId)
-      showNotification('Событие удалено')
-    } catch (err) {
-      alert(err.message)
-    } finally {
-      setActionLoading(false)
-    }
-  }
-
-  const handleRemind = async (eventId) => {
-    setActionLoading(true)
-    try {
-      const result = await api.sendReminder(id, eventId)
-      showNotification(`Напоминания отправлены (${result.sentCount}/${result.totalMembers})`)
-    } catch (err) {
-      alert(err.message)
-    } finally {
-      setActionLoading(false)
-    }
-  }
-
-  const handleShowAttendees = (eventId, eventName, filter = null) => {
-    setSelectedEventForAttendees({ id: eventId, name: eventName })
-    setAttendeesFilter(filter)
-    setShowAttendeesModal(true)
   }
 
   const handleLeaveRoom = async () => {
@@ -184,14 +134,51 @@ export default function RoomPage() {
   }
 
   const handleDeleteRoom = async () => {
-    if (!confirm('Вы уверены, что хотите удалить комнату? Это действие нельзя отменить.')) return
-    
     setActionLoading(true)
     try {
       await deleteRoom()
+      setShowSettingsModal(false)
       window.location.href = '/'
     } catch (err) {
       alert(err.message)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleTransferOwnership = async (newOwnerId) => {
+    setActionLoading(true)
+    try {
+      await api.transferRoomOwnership(id, newOwnerId)
+      setShowSettingsModal(false)
+      showNotification('Права переданы')
+      await loadRoomData()
+    } catch (err) {
+      alert(err.message)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleJoinPublicRoom = async () => {
+    setActionLoading(true)
+    try {
+      await joinPublicRoom()
+      showNotification('Вы вступили в комнату!')
+    } catch (err) {
+      if (err.message && (err.message.includes('Требуется пароль') || err.message.includes('приватная'))) {
+        const password = prompt('Введите пароль для входа в комнату:')
+        if (password) {
+          try {
+            await joinPublicRoom(password)
+            showNotification('Вы вступили в комнату!')
+          } catch (err2) {
+            alert(err2.message)
+          }
+        }
+      } else {
+        alert(err.message || 'Ошибка вступления в комнату')
+      }
     } finally {
       setActionLoading(false)
     }
@@ -201,7 +188,7 @@ export default function RoomPage() {
   if (error) return <ErrorMessage message={error} />
 
   return (
-    <div className={`min-h-screen relative ${darkMode ? 'bg-[#0f0f13]' : 'bg-[#fafafa]'}`}>
+    <div className={`h-screen w-full max-w-full overflow-hidden relative flex flex-col ${darkMode ? 'bg-[#0f0f13]' : 'bg-[#fafafa]'}`}>
       <Toast message={toastMessage} show={showToast} darkMode={darkMode} />
 
       <RoomHeader
@@ -212,63 +199,71 @@ export default function RoomPage() {
         onShare={handleShare}
         isOwner={isOwner}
         onEditRoom={() => setShowEditRoomModal(true)}
+        onOpenSettings={() => setShowSettingsModal(true)}
         roomId={id}
       />
 
-      <PullToRefresh onRefresh={handleRefresh} loading={refreshing}>
-        <main className="max-w-2xl mx-auto px-5 py-6">
-          <MembersList members={members} ownerId={room?.owner_id} darkMode={darkMode} />
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <PullToRefresh onRefresh={handleRefresh} loading={refreshing}>
+          <main className="w-full max-w-2xl mx-auto px-4 sm:px-5 py-4 sm:py-6 overflow-y-auto h-full">
+            <MembersList members={members} ownerId={room?.owner_id} darkMode={darkMode} />
 
-          {events.length === 0 ? (
-            <EmptyState
-              icon="📅"
-              title="Нет событий"
-              description="Создайте первое событие в этой комнате"
-              actionText="Создать событие"
-              onAction={() => setShowCreateModal(true)}
-              darkMode={darkMode}
-            />
-          ) : (
-            <EventsList
-              events={events}
-              userAttendances={userAttendances}
-              canEditEvent={canEditEvent}
-              canDeleteEvent={canDeleteEvent}
-              canRemindEvent={canRemindEvent}
-              onAttend={handleAttend}
-              onEdit={handleEditEvent}
-              onDelete={handleDeleteEvent}
-              onRemind={handleRemind}
-              onShowAttendees={handleShowAttendees}
-              actionLoading={actionLoading}
-              onCreateClick={() => setShowCreateModal(true)}
-              darkMode={darkMode}
-            />
-          )}
+            {events.length === 0 ? (
+              <EmptyState
+                icon="📅"
+                title="Нет событий"
+                description="Создайте первое событие в этой комнате"
+                actionText="Создать событие"
+                onAction={() => setShowCreateModal(true)}
+                darkMode={darkMode}
+              />
+            ) : (
+              <EventsList
+                events={events}
+                userAttendances={userAttendances}
+                onAttend={handleAttend}
+                actionLoading={actionLoading}
+                onCreateClick={() => setShowCreateModal(true)}
+                darkMode={darkMode}
+                roomId={id}
+              />
+            )}
 
-          <div className={`mt-8 pt-6 border-t ${darkMode ? 'border-[#2a2a30]' : 'border-gray-200'} space-y-3`}>
-            {!isOwner && (
-              <button
-                onClick={handleLeaveRoom}
-                className="text-sm text-red-500 hover:text-red-600 transition-colors"
-                disabled={actionLoading}
-              >
-                Покинуть комнату
-              </button>
+            {isMember && (
+              <div className={`mt-8 pt-6 border-t ${darkMode ? 'border-[#2a2a30]' : 'border-gray-200'} space-y-3`}>
+                {!isOwner && (
+                  <button
+                    onClick={handleLeaveRoom}
+                    className="text-sm sm:text-base text-red-500 hover:text-red-600 transition-colors"
+                    disabled={actionLoading}
+                  >
+                    Покинуть комнату
+                  </button>
+                )}
+              </div>
             )}
-            
-            {isOwner && (
-              <button
-                onClick={handleDeleteRoom}
-                className="text-sm text-red-500 hover:text-red-600 transition-colors"
-                disabled={actionLoading}
-              >
-                Удалить комнату
-              </button>
-            )}
+          </main>
+        </PullToRefresh>
+      </div>
+
+      {/* Кнопка вступления для не-участников */}
+      {!isMember && (
+        <div className="sticky bottom-4 mx-4 z-30">
+          <div className="max-w-2xl mx-auto">
+            <button
+              onClick={handleJoinPublicRoom}
+              disabled={actionLoading}
+              className={`w-full py-3 px-4 rounded-xl font-medium text-white shadow-lg ${
+                darkMode
+                  ? 'bg-gradient-to-r from-[#6d28d9] to-[#8b5cf6]'
+                  : 'bg-gradient-to-r from-[#4c1d95] to-[#6d28d9]'
+              }`}
+            >
+              {actionLoading ? 'Вступление...' : '✨ Вступить в комнату'}
+            </button>
           </div>
-        </main>
-      </PullToRefresh>
+        </div>
+      )}
 
       <CreateEventModal
         show={showCreateModal}
@@ -287,29 +282,17 @@ export default function RoomPage() {
         darkMode={darkMode}
       />
 
-      <EditEventModal
-        show={showEditEventModal}
-        onClose={() => {
-          setShowEditEventModal(false)
-          setSelectedEvent(null)
-        }}
-        onSubmit={handleUpdateEvent}
-        event={selectedEvent}
+      <RoomSettingsModal
+        show={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        room={room}
+        members={members}
+        currentUserId={currentUserId}
+        isOwner={isOwner}
+        onUpdateRoom={handleUpdateRoom}
+        onTransferOwnership={handleTransferOwnership}
+        onDeleteRoom={handleDeleteRoom}
         loading={actionLoading}
-        darkMode={darkMode}
-      />
-
-      <AttendeesModal
-        show={showAttendeesModal}
-        onClose={() => {
-          setShowAttendeesModal(false)
-          setSelectedEventForAttendees(null)
-          setAttendeesFilter(null)
-        }}
-        roomId={id}
-        eventId={selectedEventForAttendees?.id}
-        eventName={selectedEventForAttendees?.name}
-        filterStatus={attendeesFilter}
         darkMode={darkMode}
       />
     </div>

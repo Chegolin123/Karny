@@ -1,10 +1,12 @@
 // C:\OSPanel\domains\karny\frontend\src\components\room\MemberAvatar.jsx
 
 import { useState } from 'react'
-import { getInitials } from '../../utils/avatar'
+import { getInitials, getAvatarColor } from '../../utils/avatar'
 
 export default function MemberAvatar({ member, isOwner, size = 'md' }) {
   const [imgError, setImgError] = useState(false)
+  
+  if (!member) return null
   
   const sizeClasses = {
     sm: 'w-7 h-7 text-[10px]',
@@ -17,12 +19,15 @@ export default function MemberAvatar({ member, isOwner, size = 'md' }) {
       {member.photo_url && !imgError ? (
         <img
           src={member.photo_url}
-          alt=""
-          className={`${sizeClasses[size]} rounded-full object-cover border border-gray-200`}
+          alt={member.first_name || ''}
+          className={`${sizeClasses[size]} rounded-full object-cover border border-gray-200 dark:border-[#3f3f46]`}
           onError={() => setImgError(true)}
         />
       ) : (
-        <div className={`${sizeClasses[size]} rounded-full bg-gray-100 flex items-center justify-center text-gray-600 font-medium border border-gray-200`}>
+        <div 
+          className={`${sizeClasses[size]} rounded-full flex items-center justify-center text-white font-medium border border-gray-200 dark:border-[#3f3f46]`}
+          style={{ backgroundColor: getAvatarColor(member.first_name) }}
+        >
           {getInitials(member.first_name, member.last_name)}
         </div>
       )}

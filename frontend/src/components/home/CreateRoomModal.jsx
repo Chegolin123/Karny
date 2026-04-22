@@ -4,12 +4,22 @@ import { useState } from 'react'
 
 export default function CreateRoomModal({ show, onClose, onSubmit, loading, darkMode }) {
   const [name, setName] = useState('')
+  const [isPrivate, setIsPrivate] = useState(false)
+  const [password, setPassword] = useState('')
 
   const handleSubmit = (e) => {
     e.preventDefault()
     if (!name.trim()) return
-    onSubmit(name)
+    
+    if (isPrivate && password.length < 4) {
+      alert('Пароль должен быть не менее 4 символов')
+      return
+    }
+    
+    onSubmit(name, isPrivate, password || null)
     setName('')
+    setIsPrivate(false)
+    setPassword('')
   }
 
   if (!show) return null
@@ -28,7 +38,7 @@ export default function CreateRoomModal({ show, onClose, onSubmit, loading, dark
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Название"
-            className={`w-full px-4 py-3 border rounded-lg text-sm focus:outline-none focus:border-[#8b5cf6] focus:ring-2 focus:ring-[#8b5cf6]/20 transition-all ${
+            className={`w-full px-4 py-3 border rounded-lg text-sm focus:outline-none focus:border-[#8b5cf6] focus:ring-2 focus:ring-[#8b5cf6]/20 transition-all mb-3 ${
               darkMode 
                 ? 'bg-[#2a2a30] border-[#3f3f46] text-white placeholder-gray-400' 
                 : 'bg-gray-50 border-gray-200 text-gray-900'
@@ -37,6 +47,59 @@ export default function CreateRoomModal({ show, onClose, onSubmit, loading, dark
             required
             disabled={loading}
           />
+          
+          {/* Выбор типа комнаты */}
+          <div className="flex gap-3 mb-3">
+            <button
+              type="button"
+              onClick={() => setIsPrivate(false)}
+              className={`flex-1 py-2 px-3 text-sm font-medium rounded-lg border-2 transition-all ${
+                !isPrivate
+                  ? darkMode 
+                    ? 'border-[#8b5cf6] bg-[#2d1b4e] text-[#c4b5fd]' 
+                    : 'border-[#8b5cf6] bg-[#f5f3ff] text-[#6d28d9]'
+                  : darkMode
+                    ? 'border-[#2a2a30] text-gray-400'
+                    : 'border-gray-200 text-gray-500'
+              }`}
+            >
+              🌍 Публичная
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsPrivate(true)}
+              className={`flex-1 py-2 px-3 text-sm font-medium rounded-lg border-2 transition-all ${
+                isPrivate
+                  ? darkMode 
+                    ? 'border-[#8b5cf6] bg-[#2d1b4e] text-[#c4b5fd]' 
+                    : 'border-[#8b5cf6] bg-[#f5f3ff] text-[#6d28d9]'
+                  : darkMode
+                    ? 'border-[#2a2a30] text-gray-400'
+                    : 'border-gray-200 text-gray-500'
+              }`}
+            >
+              🔒 Приватная
+            </button>
+          </div>
+          
+          {/* Пароль для приватной комнаты */}
+          {isPrivate && (
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Пароль (минимум 4 символа)"
+              className={`w-full px-4 py-3 border rounded-lg text-sm focus:outline-none focus:border-[#8b5cf6] focus:ring-2 focus:ring-[#8b5cf6]/20 transition-all mb-3 ${
+                darkMode 
+                  ? 'bg-[#2a2a30] border-[#3f3f46] text-white placeholder-gray-400' 
+                  : 'bg-gray-50 border-gray-200 text-gray-900'
+              }`}
+              minLength={4}
+              required={isPrivate}
+              disabled={loading}
+            />
+          )}
+          
           <div className="flex gap-3 mt-6">
             <button
               type="button"

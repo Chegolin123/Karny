@@ -13,7 +13,7 @@ router.get('/', async (req, res) => {
     const roomId = req.params.roomId;
     const userId = req.query.userId;
     const limit = parseInt(req.query.limit) || 30;
-    const before = req.query.before ? parseInt(req.query.before) : null;
+    const before = req.query.before;
     
     console.log('📨 GET /messages', { roomId, userId, limit, before });
     
@@ -24,7 +24,6 @@ router.get('/', async (req, res) => {
     const connection = await pool.getConnection();
     
     try {
-      // Проверяем, что пользователь участник комнаты
       const [members] = await connection.execute(
         'SELECT * FROM room_members WHERE room_id = ? AND user_id = ?',
         [roomId, userId]
@@ -34,78 +33,60 @@ router.get('/', async (req, res) => {
         return res.status(403).json({ error: 'Вы не участник этой комнаты' });
       }
       
-      // Получаем сообщения (интерполяция limit, т.к. mysql2 не поддерживает ? для LIMIT)
-      let messagesQuery;
+      let query;
       let params;
       
       if (before) {
-        messagesQuery = `
-          SELECT * FROM messages 
-          WHERE room_id = ? AND id < ? 
-          ORDER BY created_at DESC 
+        query = `
+          SELECT m.*, 
+                 u.first_name, u.last_name, u.username, u.photo_url,
+                 reply_to.content as reply_to_content,
+                 reply_to_user.first_name as reply_to_first_name,
+                 (SELECT COUNT(*) FROM message_reads WHERE message_id = m.id) as read_count
+          FROM messages m
+          JOIN users u ON m.user_id = u.id
+          LEFT JOIN messages reply_to ON m.reply_to_id = reply_to.id
+          LEFT JOIN users reply_to_user ON reply_to.user_id = reply_to_user.id
+          WHERE m.room_id = ? AND m.id < ?
+          ORDER BY m.is_pinned DESC, m.created_at DESC
           LIMIT ${limit}
         `;
         params = [roomId, before];
       } else {
-        messagesQuery = `
-          SELECT * FROM messages 
-          WHERE room_id = ? 
-          ORDER BY created_at DESC 
+        query = `
+          SELECT m.*, 
+                 u.first_name, u.last_name, u.username, u.photo_url,
+                 reply_to.content as reply_to_content,
+                 reply_to_user.first_name as reply_to_first_name,
+                 (SELECT COUNT(*) FROM message_reads WHERE message_id = m.id) as read_count
+          FROM messages m
+          JOIN users u ON m.user_id = u.id
+          LEFT JOIN messages reply_to ON m.reply_to_id = reply_to.id
+          LEFT JOIN users reply_to_user ON reply_to.user_id = reply_to_user.id
+          WHERE m.room_id = ?
+          ORDER BY m.is_pinned DESC, m.created_at DESC
           LIMIT ${limit}
         `;
         params = [roomId];
       }
       
-      console.log('📝 SQL Query:', messagesQuery);
-      console.log('📝 Params:', params);
+      const [messages] = await connection.execute(query, params);
       
-      const [messages] = await connection.execute(messagesQuery, params);
-      
-      console.log(`📨 Найдено сообщений: ${messages.length}`);
-      
-      // Если сообщений нет, возвращаем пустой массив
-      if (messages.length === 0) {
-        return res.json({ 
-          messages: [],
-          hasMore: false
-        });
+      // Отмечаем сообщения как прочитанные
+      if (messages.length > 0) {
+        const messageIds = messages.map(m => m.id);
+        for (const msgId of messageIds) {
+          await connection.execute(
+            'INSERT IGNORE INTO message_reads (message_id, user_id) VALUES (?, ?)',
+            [msgId, userId]
+          );
+        }
       }
       
-      // Получаем информацию о пользователях для каждого сообщения
-      const userIds = [...new Set(messages.map(m => m.user_id))];
-      
-      if (userIds.length > 0) {
-        // Создаём плейсхолдеры для IN запроса
-        const placeholders = userIds.map(() => '?').join(',');
-        const [users] = await connection.execute(
-          `SELECT id, first_name, last_name, username, photo_url FROM users WHERE id IN (${placeholders})`,
-          userIds
-        );
-        
-        // Создаём карту пользователей для быстрого доступа
-        const usersMap = {};
-        users.forEach(u => { usersMap[u.id] = u; });
-        
-        // Добавляем данные пользователя к каждому сообщению
-        const messagesWithUsers = messages.map(msg => ({
-          id: msg.id,
-          room_id: msg.room_id,
-          user_id: msg.user_id,
-          content: msg.content,
-          created_at: msg.created_at,
-          user: usersMap[msg.user_id] || null
-        }));
-        
-        res.json({ 
-          messages: messagesWithUsers.reverse(),
-          hasMore: messages.length === limit
-        });
-      } else {
-        res.json({ 
-          messages: messages.reverse(),
-          hasMore: messages.length === limit
-        });
-      }
+      res.json({ 
+        messages: messages.reverse(),
+        hasMore: messages.length === limit
+      });
       
     } finally {
       connection.release();
@@ -113,6 +94,161 @@ router.get('/', async (req, res) => {
     
   } catch (error) {
     console.error('❌ Ошибка получения сообщений:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * PUT /api/rooms/:roomId/messages/:messageId
+ * Редактировать сообщение
+ */
+router.put('/:messageId', async (req, res) => {
+  try {
+    const { roomId, messageId } = req.params;
+    const { content, userId } = req.body;
+    
+    if (!content || content.trim().length === 0) {
+      return res.status(400).json({ error: 'Сообщение не может быть пустым' });
+    }
+    
+    const connection = await pool.getConnection();
+    
+    try {
+      const [messages] = await connection.execute(
+        'SELECT user_id FROM messages WHERE id = ? AND room_id = ?',
+        [messageId, roomId]
+      );
+      
+      if (messages.length === 0) {
+        return res.status(404).json({ error: 'Сообщение не найдено' });
+      }
+      
+      if (messages[0].user_id != userId) {
+        return res.status(403).json({ error: 'Вы не можете редактировать это сообщение' });
+      }
+      
+      await connection.execute(
+        'UPDATE messages SET content = ?, is_edited = TRUE, edited_at = NOW() WHERE id = ?',
+        [content.trim(), messageId]
+      );
+      
+      const [updated] = await connection.execute(
+        `SELECT m.*, u.first_name, u.last_name, u.username, u.photo_url
+         FROM messages m
+         JOIN users u ON m.user_id = u.id
+         WHERE m.id = ?`,
+        [messageId]
+      );
+      
+      res.json({ success: true, message: updated[0] });
+      
+    } finally {
+      connection.release();
+    }
+    
+  } catch (error) {
+    console.error('❌ Ошибка редактирования:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * DELETE /api/rooms/:roomId/messages/:messageId
+ * Удалить сообщение
+ */
+router.delete('/:messageId', async (req, res) => {
+  try {
+    const { roomId, messageId } = req.params;
+    const { userId } = req.body;
+    
+    const connection = await pool.getConnection();
+    
+    try {
+      // Проверяем права
+      const [rooms] = await connection.execute(
+        'SELECT owner_id FROM rooms WHERE id = ?',
+        [roomId]
+      );
+      
+      const [messages] = await connection.execute(
+        'SELECT user_id FROM messages WHERE id = ? AND room_id = ?',
+        [messageId, roomId]
+      );
+      
+      if (messages.length === 0) {
+        return res.status(404).json({ error: 'Сообщение не найдено' });
+      }
+      
+      const isOwner = rooms[0]?.owner_id == userId;
+      const isAuthor = messages[0].user_id == userId;
+      
+      if (!isOwner && !isAuthor) {
+        return res.status(403).json({ error: 'Нет прав на удаление' });
+      }
+      
+      await connection.execute('DELETE FROM messages WHERE id = ?', [messageId]);
+      
+      res.json({ success: true, message: 'Сообщение удалено' });
+      
+    } finally {
+      connection.release();
+    }
+    
+  } catch (error) {
+    console.error('❌ Ошибка удаления:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/rooms/:roomId/messages/:messageId/pin
+ * Закрепить/открепить сообщение (только админ)
+ */
+router.post('/:messageId/pin', async (req, res) => {
+  try {
+    const { roomId, messageId } = req.params;
+    const { userId } = req.body;
+    
+    const connection = await pool.getConnection();
+    
+    try {
+      const [rooms] = await connection.execute(
+        'SELECT owner_id FROM rooms WHERE id = ?',
+        [roomId]
+      );
+      
+      if (rooms[0]?.owner_id != userId) {
+        return res.status(403).json({ error: 'Только админ может закреплять сообщения' });
+      }
+      
+      const [messages] = await connection.execute(
+        'SELECT is_pinned FROM messages WHERE id = ? AND room_id = ?',
+        [messageId, roomId]
+      );
+      
+      if (messages.length === 0) {
+        return res.status(404).json({ error: 'Сообщение не найдено' });
+      }
+      
+      const newState = !messages[0].is_pinned;
+      
+      await connection.execute(
+        `UPDATE messages 
+         SET is_pinned = ?, 
+             pinned_at = ${newState ? 'NOW()' : 'NULL'},
+             pinned_by = ${newState ? '?' : 'NULL'}
+         WHERE id = ?`,
+        newState ? [1, userId, messageId] : [0, messageId]
+      );
+      
+      res.json({ success: true, is_pinned: newState });
+      
+    } finally {
+      connection.release();
+    }
+    
+  } catch (error) {
+    console.error('❌ Ошибка закрепления:', error);
     res.status(500).json({ error: error.message });
   }
 });

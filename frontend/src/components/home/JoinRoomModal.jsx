@@ -4,12 +4,33 @@ import { useState } from 'react'
 
 export default function JoinRoomModal({ show, onClose, onSubmit, loading, darkMode }) {
   const [code, setCode] = useState('')
+  const [password, setPassword] = useState('')
+  const [requiresPassword, setRequiresPassword] = useState(false)
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
     if (!code.trim()) return
-    onSubmit(code)
+    
+    try {
+      await onSubmit(code, password || null)
+      setCode('')
+      setPassword('')
+      setRequiresPassword(false)
+    } catch (err) {
+      // Если сервер говорит что нужен пароль
+      if (err.message.includes('Требуется пароль') || err.message.includes('Неверный пароль')) {
+        setRequiresPassword(true)
+      } else {
+        alert(err.message)
+      }
+    }
+  }
+
+  const handleClose = () => {
     setCode('')
+    setPassword('')
+    setRequiresPassword(false)
+    onClose()
   }
 
   if (!show) return null
@@ -28,7 +49,7 @@ export default function JoinRoomModal({ show, onClose, onSubmit, loading, darkMo
             value={code}
             onChange={(e) => setCode(e.target.value.toUpperCase())}
             placeholder="Код комнаты"
-            className={`w-full px-4 py-3 border rounded-lg text-sm font-mono uppercase tracking-wider text-center focus:outline-none focus:border-[#8b5cf6] focus:ring-2 focus:ring-[#8b5cf6]/20 transition-all ${
+            className={`w-full px-4 py-3 border rounded-lg text-sm font-mono uppercase tracking-wider text-center focus:outline-none focus:border-[#8b5cf6] focus:ring-2 focus:ring-[#8b5cf6]/20 transition-all mb-3 ${
               darkMode 
                 ? 'bg-[#2a2a30] border-[#3f3f46] text-white placeholder-gray-400' 
                 : 'bg-gray-50 border-gray-200 text-gray-900'
@@ -37,10 +58,27 @@ export default function JoinRoomModal({ show, onClose, onSubmit, loading, darkMo
             required
             disabled={loading}
           />
+          
+          {requiresPassword && (
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Пароль"
+              className={`w-full px-4 py-3 border rounded-lg text-sm focus:outline-none focus:border-[#8b5cf6] focus:ring-2 focus:ring-[#8b5cf6]/20 transition-all mb-3 ${
+                darkMode 
+                  ? 'bg-[#2a2a30] border-[#3f3f46] text-white placeholder-gray-400' 
+                  : 'bg-gray-50 border-gray-200 text-gray-900'
+              }`}
+              required
+              disabled={loading}
+            />
+          )}
+          
           <div className="flex gap-3 mt-6">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className={`flex-1 py-3 text-sm font-medium rounded-lg transition-colors border ${
                 darkMode 
                   ? 'bg-[#2a2a30] border-[#3f3f46] text-gray-300 hover:bg-[#3f3f46]' 

@@ -66,4 +66,88 @@ router.post('/notifications', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/users/events/new
+ * Получить новые события для пользователя
+ */
+router.get('/events/new', async (req, res) => {
+  try {
+    const userId = req.query.userId;
+    
+    if (!userId) {
+      return res.status(400).json({ error: 'userId обязателен' });
+    }
+    
+    const connection = await pool.getConnection();
+    
+    try {
+      const [events] = await connection.execute(
+        `SELECT e.*, r.name as room_name, r.id as room_id
+         FROM events e
+         JOIN rooms r ON e.room_id = r.id
+         JOIN room_members rm ON r.id = rm.room_id
+         LEFT JOIN event_notifications en ON e.id = en.event_id AND en.user_id = ?
+         WHERE rm.user_id = ?
+           AND e.created_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)
+           AND en.event_id IS NULL
+         ORDER BY e.created_at DESC`,
+        [userId, userId]
+      );
+      
+      for (const event of events) {
+        await connection.execute(
+          'INSERT IGNORE INTO event_notifications (event_id, user_id) VALUES (?, ?)',
+          [event.id, userId]
+        );
+      }
+      
+      res.json({ events });
+      
+    } finally {
+      connection.release();
+    }
+    
+  } catch (error) {
+    console.error('Ошибка получения новых событий:', error);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
+/**
+ * GET /api/users/events
+ * Получить все события пользователя из всех комнат
+ */
+router.get('/events', async (req, res) => {
+  try {
+    const userId = req.query.userId;
+    
+    if (!userId) {
+      return res.status(400).json({ error: 'userId обязателен' });
+    }
+    
+    const connection = await pool.getConnection();
+    
+    try {
+      const [events] = await connection.execute(
+        `SELECT e.*, r.name as room_name, r.id as room_id
+         FROM events e
+         JOIN rooms r ON e.room_id = r.id
+         JOIN room_members rm ON r.id = rm.room_id
+         WHERE rm.user_id = ?
+         ORDER BY e.event_date ASC`,
+        [userId]
+      );
+      
+      res.json({ events });
+      
+    } finally {
+      connection.release();
+    }
+    
+  } catch (error) {
+    console.error('Ошибка получения событий пользователя:', error);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
 module.exports = router;

@@ -20,6 +20,9 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:3001',
         changeOrigin: true,
+        secure: false,
+        ws: true,
+        rewrite: (path) => path // ← Добавьте эту строку
       },
       '/chat': {
         target: 'ws://localhost:3001',

@@ -6,11 +6,13 @@ export default function EditEventModal({ show, onClose, onSubmit, event, loading
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [eventDate, setEventDate] = useState('')
+  const [timeVotingEnabled, setTimeVotingEnabled] = useState(false)
 
   useEffect(() => {
     if (event) {
       setName(event.name || '')
       setDescription(event.description || '')
+      setTimeVotingEnabled(event.time_voting_enabled || false)
       
       if (event.event_date) {
         const date = new Date(event.event_date)
@@ -20,6 +22,8 @@ export default function EditEventModal({ show, onClose, onSubmit, event, loading
         const hours = String(date.getHours()).padStart(2, '0')
         const minutes = String(date.getMinutes()).padStart(2, '0')
         setEventDate(`${year}-${month}-${day}T${hours}:${minutes}`)
+      } else {
+        setEventDate('')
       }
     }
   }, [event])
@@ -27,9 +31,12 @@ export default function EditEventModal({ show, onClose, onSubmit, event, loading
   const handleSubmit = (e) => {
     e.preventDefault()
     if (!name.trim() || name.trim().length < 3) return
-    if (!eventDate) return
+    if (!eventDate && !timeVotingEnabled) {
+      alert('Укажите дату или включите обсуждение времени')
+      return
+    }
     
-    onSubmit(name.trim(), eventDate, description.trim() || null)
+    onSubmit(name.trim(), eventDate || null, description.trim() || null, timeVotingEnabled)
   }
 
   if (!show) return null
@@ -69,18 +76,76 @@ export default function EditEventModal({ show, onClose, onSubmit, event, loading
             }`}
             disabled={loading}
           />
-          <input
-            type="datetime-local"
-            value={eventDate}
-            onChange={(e) => setEventDate(e.target.value)}
-            className={`w-full px-4 py-3 border rounded-lg text-sm focus:outline-none focus:border-[#8b5cf6] focus:ring-2 focus:ring-[#8b5cf6]/20 transition-all mb-6 ${
-              darkMode 
-                ? 'bg-[#2a2a30] border-[#3f3f46] text-white [color-scheme:dark]' 
-                : 'bg-gray-50 border-gray-200 text-gray-900'
-            }`}
-            required
-            disabled={loading}
-          />
+          
+          {/* Выбор: дата ИЛИ обсуждение */}
+          <div className="space-y-3 mb-6">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setTimeVotingEnabled(false)
+                  if (!eventDate) setEventDate('')
+                }}
+                className={`flex-1 py-2 px-3 text-sm font-medium rounded-lg border-2 transition-all ${
+                  !timeVotingEnabled
+                    ? darkMode 
+                      ? 'border-[#8b5cf6] bg-[#2d1b4e] text-[#c4b5fd]' 
+                      : 'border-[#8b5cf6] bg-[#f5f3ff] text-[#6d28d9]'
+                    : darkMode
+                      ? 'border-[#2a2a30] text-gray-400'
+                      : 'border-gray-200 text-gray-500'
+                }`}
+              >
+                📅 Указать время
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTimeVotingEnabled(true)
+                  setEventDate('')
+                }}
+                className={`flex-1 py-2 px-3 text-sm font-medium rounded-lg border-2 transition-all ${
+                  timeVotingEnabled
+                    ? darkMode 
+                      ? 'border-[#8b5cf6] bg-[#2d1b4e] text-[#c4b5fd]' 
+                      : 'border-[#8b5cf6] bg-[#f5f3ff] text-[#6d28d9]'
+                    : darkMode
+                      ? 'border-[#2a2a30] text-gray-400'
+                      : 'border-gray-200 text-gray-500'
+                }`}
+              >
+                🗳️ Обсудить время
+              </button>
+            </div>
+            
+            {!timeVotingEnabled && (
+              <input
+                type="datetime-local"
+                value={eventDate}
+                onChange={(e) => setEventDate(e.target.value)}
+                className={`w-full px-4 py-3 border rounded-lg text-sm focus:outline-none focus:border-[#8b5cf6] focus:ring-2 focus:ring-[#8b5cf6]/20 transition-all ${
+                  darkMode 
+                    ? 'bg-[#2a2a30] border-[#3f3f46] text-white [color-scheme:dark]' 
+                    : 'bg-gray-50 border-gray-200 text-gray-900'
+                }`}
+                required={!timeVotingEnabled}
+                disabled={loading}
+              />
+            )}
+            
+            {timeVotingEnabled && (
+              <div className={`p-4 rounded-lg border ${
+                darkMode 
+                  ? 'bg-[#2d1b4e]/30 border-[#8b5cf6]/30' 
+                  : 'bg-[#f5f3ff] border-[#c4b5fd]'
+              }`}>
+                <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                  🗳️ Время будет выбрано голосованием участников
+                </p>
+              </div>
+            )}
+          </div>
+          
           <div className="flex gap-3">
             <button
               type="button"

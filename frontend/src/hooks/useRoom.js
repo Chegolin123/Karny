@@ -11,6 +11,8 @@ export function useRoom(roomId) {
   const [error, setError] = useState(null)
   const [currentUserId, setCurrentUserId] = useState(null)
   const [userAttendances, setUserAttendances] = useState({})
+  const [isMember, setIsMember] = useState(true)
+  const [isOwner, setIsOwner] = useState(false)
 
   useEffect(() => {
     if (roomId) {
@@ -33,9 +35,18 @@ export function useRoom(roomId) {
       setLoading(true)
       setError(null)
       const data = await api.getRoom(roomId)
+      
+      if (!data || !data.room) {
+        setError('Комната не найдена')
+        setLoading(false)
+        return
+      }
+      
       setRoom(data.room)
       setMembers(data.members || [])
       setEvents(data.events || [])
+      setIsMember(data.isMember !== false)
+      setIsOwner(data.isOwner || (data.room?.owner_id == currentUserId))
       
       if (data.events && currentUserId) {
         const attendances = {}
@@ -50,7 +61,13 @@ export function useRoom(roomId) {
         setUserAttendances(attendances)
       }
     } catch (err) {
-      setError(err.message)
+      console.error('Ошибка загрузки комнаты:', err)
+      if (err.message?.includes('приватная комната') || err.message?.includes('Требуется пароль')) {
+        setError('Это приватная комната. Введите пароль для входа.')
+        setIsMember(false)
+      } else {
+        setError(err.message || 'Ошибка загрузки комнаты')
+      }
     } finally {
       setLoading(false)
     }
@@ -62,14 +79,8 @@ export function useRoom(roomId) {
     return result
   }
 
-  const createEvent = async (name, eventDate, description) => {
-    const result = await api.createEvent(roomId, name, eventDate, description)
-    await loadRoomData()
-    return result
-  }
-
-  const updateEvent = async (eventId, name, eventDate, description) => {
-    const result = await api.updateEvent(roomId, eventId, name, eventDate, description)
+  const createEvent = async (name, eventDate, description, timeVotingEnabled) => {
+    const result = await api.createEvent(roomId, name, eventDate, description, timeVotingEnabled)
     await loadRoomData()
     return result
   }
@@ -77,11 +88,6 @@ export function useRoom(roomId) {
   const attendEvent = async (eventId, status) => {
     await api.attendEvent(roomId, eventId, status)
     setUserAttendances(prev => ({ ...prev, [eventId]: status }))
-    await loadRoomData()
-  }
-
-  const deleteEvent = async (eventId) => {
-    await api.deleteEvent(roomId, eventId)
     await loadRoomData()
   }
 
@@ -93,13 +99,21 @@ export function useRoom(roomId) {
     await api.deleteRoom(roomId)
   }
 
-  const isOwner = currentUserId === room?.owner_id
+  const joinPublicRoom = async (password = null) => {
+    const result = await api.joinRoom(room.code, password)
+    setIsMember(true)
+    await loadRoomData()
+    return result
+  }
+
   const canEditEvent = (eventCreatedBy) => {
     return isOwner || eventCreatedBy === currentUserId
   }
+  
   const canDeleteEvent = (eventCreatedBy) => {
     return isOwner || eventCreatedBy === currentUserId
   }
+  
   const canRemindEvent = (eventCreatedBy) => {
     return isOwner || eventCreatedBy === currentUserId
   }
@@ -113,14 +127,14 @@ export function useRoom(roomId) {
     currentUserId,
     userAttendances,
     isOwner,
+    isMember,
     loadRoomData,
     updateRoom,
     createEvent,
-    updateEvent,
     attendEvent,
-    deleteEvent,
     leaveRoom,
     deleteRoom,
+    joinPublicRoom,
     canEditEvent,
     canDeleteEvent,
     canRemindEvent

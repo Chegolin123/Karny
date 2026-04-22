@@ -4,7 +4,9 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { useEffect } from 'react'
 import HomePage from './pages/HomePage'
 import RoomPage from './pages/RoomPage'
-import RoomChatPage from './pages/RoomChatPage' // ← Добавлен импорт
+import RoomChatPage from './pages/RoomChatPage'
+import EventPage from './pages/EventPage'
+import CalendarPage from './pages/CalendarPage'
 
 function App() {
   useEffect(() => {
@@ -34,7 +36,9 @@ function App() {
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/room/:id" element={<RoomPage />} />
-        <Route path="/room/:id/chat" element={<RoomChatPage />} /> {/* ← Новый маршрут */}
+        <Route path="/room/:id/chat" element={<RoomChatPage />} />
+        <Route path="/room/:roomId/event/:eventId" element={<EventPage />} />
+        <Route path="/calendar" element={<CalendarPage />} />
       </Routes>
     </BrowserRouter>
   )

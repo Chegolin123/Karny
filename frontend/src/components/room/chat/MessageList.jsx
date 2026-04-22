@@ -1,11 +1,8 @@
 // C:\OSPanel\domains\karny\frontend\src\components\room\chat\MessageList.jsx
 
 import { forwardRef, useEffect } from 'react'
-import SystemMessage from './SystemMessage'
 import MessageBubble from './MessageBubble'
 import TypingIndicator from './TypingIndicator'
-
-// Импортируем изображение напрямую
 import kotofonBg from '/images/kotofon.jpg'
 
 const MessageList = forwardRef(({ 
@@ -15,7 +12,14 @@ const MessageList = forwardRef(({
   darkMode,
   isLoadingMore,
   typingUsers,
-  onScroll 
+  onScroll,
+  isAdmin,
+  onReply,
+  onEdit,
+  onDelete,
+  onPin,
+  onMarkAsRead,
+  roomId
 }, ref) => {
   const messagesEndRef = ref?.messagesEnd
   const containerRef = ref?.container
@@ -31,10 +35,6 @@ const MessageList = forwardRef(({
 
   const renderMessages = () => {
     return messages.map((msg, index) => {
-      if (msg.type === 'system') {
-        return <SystemMessage key={`sys-${index}`} content={msg.content} darkMode={darkMode} />
-      }
-      
       const msgUserId = String(msg.userId)
       const isOwn = msgUserId === currentUserIdStr
       const sender = msg.user || members.find(m => String(m.id) === msgUserId)
@@ -56,13 +56,19 @@ const MessageList = forwardRef(({
             showAvatar={showAvatar}
             showName={showName}
             darkMode={darkMode}
+            isAdmin={isAdmin}
+            onReply={onReply}
+            onEdit={onEdit}
+            onDelete={onDelete}
+            onPin={onPin}
+            onMarkAsRead={onMarkAsRead}
+            roomId={roomId}
           />
         </div>
       )
     })
   }
 
-  // Единый фон для обеих тем
   const containerStyle = {
     backgroundColor: darkMode ? '#0f0f13' : '#e5ded8',
     backgroundImage: `url("${kotofonBg}")`,
@@ -72,7 +78,6 @@ const MessageList = forwardRef(({
     backgroundAttachment: 'scroll'
   }
 
-  // Стили для контента
   const contentStyle = {
     position: 'relative',
     zIndex: 10
@@ -85,10 +90,9 @@ const MessageList = forwardRef(({
     <div 
       ref={containerRef}
       onScroll={onScroll}
-      className="flex-1 overflow-y-auto p-4 space-y-1 relative scrollbar-hide"
+      className="flex-1 overflow-y-auto p-4 space-y-1 relative"
       style={containerStyle}
     >
-      {/* Контент напрямую, без оверлея */}
       <div style={contentStyle}>
         {isLoadingMore && (
           <div className="flex justify-center py-2">
