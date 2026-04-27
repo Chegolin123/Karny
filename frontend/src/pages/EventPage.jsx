@@ -1,0 +1,300 @@
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { useParams, Link, useNavigate } from 'react-router-dom'
+import { useTheme } from '../components/common/ThemeProvider'
+import { useNotification } from '../contexts/NotificationContext'
+import * as api from '../api'
+import LoadingSpinner from '../components/common/LoadingSpinner'
+import ErrorMessage from '../components/common/ErrorMessage'
+import Toast from '../components/common/Toast'
+import TimeVoting from '../components/room/TimeVoting'
+import EditEventModal from '../components/room/EditEventModal'
+import AttendeesModal from '../components/room/AttendeesModal'
+import VideoPlayer from '../components/room/VideoPlayer'
+
+function formatEventDate(d) {
+  if (!d) return 'Время обсуждается'
+  return new Date(d).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+export default function EventPage() {
+  const { roomId, eventId } = useParams()
+  const navigate = useNavigate()
+  const { theme } = useTheme()
+  const darkMode = theme === 'dark'
+  const { notifySuccess, notifyVideoSessionStarted } = useNotification()
+
+  const [event, setEvent] = useState(null)
+  const [room, setRoom] = useState(null)
+  const [attendees, setAttendees] = useState({ going: [], maybe: [], declined: [] })
+  const [userStatus, setUserStatus] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [actionLoading, setActionLoading] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [showAttendeesModal, setShowAttendeesModal] = useState(false)
+  const [showToast, setShowToast] = useState(false)
+  const [toastMessage, setToastMessage] = useState('')
+
+  const wsRef = useRef(null)
+  const currentUserId = api.getCurrentUserId()
+
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const rd = await api.getRoom(roomId)
+      if (!rd?.room) { setError('Комната не найдена'); return }
+      setRoom(rd.room)
+      const ed = rd.events?.find(e => e.id == eventId)
+      if (!ed) { setError('Событие не найдено'); return }
+      setEvent(ed)
+      const at = await api.getEventAttendees(roomId, eventId)
+      setAttendees(at || { going: [], maybe: [], declined: [] })
+      const st = await api.getAttendeeStatus(roomId, eventId)
+      setUserStatus(st?.status || null)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [roomId, eventId])
+
+  // WebSocket + автообновление при video_session_started
+  useEffect(() => {
+    loadData()
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const host = window.location.host
+    const ws = new WebSocket(`${protocol}//${host}/chat?roomId=${roomId}&userId=${currentUserId}`)
+
+    ws.addEventListener('message', (e) => {
+      try {
+        const d = JSON.parse(e.data)
+        if (d.type === 'video_session_started' || d.type === 'video_session_restarted') {
+          console.log('📡 Получен сигнал перезапуска, обновляем...')
+          loadData()
+        }
+      } catch {}
+    })
+
+    wsRef.current = ws
+
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close()
+        wsRef.current = null
+      }
+    }
+  }, [roomId, eventId, currentUserId, loadData])
+
+  const isOwner = room?.owner_id == currentUserId
+  const isCreator = event?.created_by == currentUserId
+  const canEdit = isOwner || isCreator
+
+  const showNotification = (m) => {
+    setToastMessage(m)
+    setShowToast(true)
+    setTimeout(() => setShowToast(false), 2000)
+  }
+
+  const handleStartSession = async () => {
+    showNotification("Запуск через 3 секунды...");
+    // Задержка перед запуском
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    try {
+      await api.startVideoSession(roomId, eventId)
+      showNotification('Сеанс запущен!')
+      notifyVideoSessionStarted(roomId, event?.name, eventId, true)
+      // Обновляем страницу админа после небольшой задержки
+      setTimeout(() => loadData(), 1500)
+    } catch (err) {
+      alert('Ошибка: ' + err.message)
+    }
+  }
+
+  const handleRestartSession = async () => {
+    if (!confirm('Перезапустить событие? Все вернутся к ожиданию.')) return
+    setActionLoading(true)
+    try {
+      await api.restartVideoSession(roomId, eventId)
+      showNotification('Событие перезапущено!')
+      setTimeout(() => loadData(), 1000)
+    } catch (err) {
+      alert('Ошибка: ' + err.message)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleAttend = async (s) => {
+    setActionLoading(true)
+    try {
+      await api.attendEvent(roomId, eventId, s)
+      setUserStatus(s)
+      await loadData()
+      showNotification(s === 'going' ? 'Вы идёте' : s === 'maybe' ? 'Возможно пойдёте' : 'Вы не идёте')
+    } catch (e) { alert(e.message) }
+    finally { setActionLoading(false) }
+  }
+
+  const handleUpdateEvent = async (n, d, desc, tv) => {
+    setActionLoading(true)
+    try {
+      await api.updateEvent(roomId, eventId, n, d, desc, tv)
+      setShowEditModal(false)
+      showNotification('Событие обновлено')
+      await loadData()
+    } catch (e) { alert(e.message) }
+    finally { setActionLoading(false) }
+  }
+
+  const handleDeleteEvent = async () => {
+    if (!confirm('Удалить?')) return
+    setActionLoading(true)
+    try {
+      await api.deleteEvent(roomId, eventId)
+      navigate(`/room/${roomId}`)
+    } catch (e) { alert(e.message) }
+    finally { setActionLoading(false) }
+  }
+
+  const handleRemind = async () => {
+    setActionLoading(true)
+    try {
+      const r = await api.sendReminder(roomId, eventId)
+      showNotification(`Отправлено (${r?.sentCount || 0}/${r?.totalMembers || 0})`)
+    } catch (e) { alert(e.message) }
+    finally { setActionLoading(false) }
+  }
+
+  const getBtn = (s) => {
+    const a = userStatus === s
+    const b = 'flex-1 py-3 px-4 text-sm font-semibold border-2 rounded-xl'
+    const c = {
+      going: darkMode ? 'bg-green-900/30 border-green-600 text-green-400' : 'bg-green-100 border-green-500 text-green-800',
+      maybe: darkMode ? 'bg-yellow-900/30 border-yellow-600 text-yellow-400' : 'bg-yellow-100 border-yellow-500 text-yellow-800',
+      declined: darkMode ? 'bg-red-900/30 border-red-600 text-red-400' : 'bg-red-100 border-red-500 text-red-800'
+    }
+    const o = {
+      going: darkMode ? 'border-green-800 text-green-500 hover:bg-green-900/20' : 'border-green-300 text-green-700 hover:bg-green-50',
+      maybe: darkMode ? 'border-yellow-800 text-yellow-500 hover:bg-yellow-900/20' : 'border-yellow-300 text-yellow-700 hover:bg-yellow-50',
+      declined: darkMode ? 'border-red-800 text-red-500 hover:bg-red-900/20' : 'border-red-300 text-red-700 hover:bg-red-50'
+    }
+    return `${b} ${a ? c[s] : o[s]} ${actionLoading ? 'opacity-50' : ''}`
+  }
+
+  if (loading) return <LoadingSpinner />
+  if (error) return <ErrorMessage message={error} />
+  if (!event || !room) return <LoadingSpinner />
+
+  return (
+    <div className={`h-screen flex flex-col ${darkMode ? 'bg-[#0f0f13]' : 'bg-[#fafafa]'}`}>
+      <Toast message={toastMessage} show={showToast} darkMode={darkMode} />
+
+      <header className={`flex-shrink-0 ${darkMode ? 'bg-[#1a1a1e] border-b border-[#2a2a30]' : 'bg-white border-b border-gray-200'}`}>
+        <div className="max-w-2xl mx-auto px-4 py-3">
+          <div className="flex items-center gap-3">
+            <Link to={`/room/${roomId}`} className={`p-2 -ml-2 rounded-full ${darkMode ? 'hover:bg-[#2a2a30]' : 'hover:bg-gray-100'}`}>
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+            </Link>
+            <div className="flex-1 min-w-0">
+              <h1 className={`text-lg font-semibold truncate ${darkMode ? 'text-white' : 'text-gray-900'}`}>{event.name}</h1>
+              <p className={`text-sm truncate ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{room.name}</p>
+            </div>
+            {canEdit && (
+              <button onClick={() => setShowEditModal(true)} className={`p-2 rounded-full ${darkMode ? 'hover:bg-[#2a2a30]' : 'hover:bg-gray-100'}`}>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+              </button>
+            )}
+          </div>
+        </div>
+      </header>
+
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <main className="max-w-2xl mx-auto px-4 py-4">
+          {/* Видео-плеер */}
+          {event.video_url && (
+            <VideoPlayer
+              videoUrl={event.video_url}
+              videoPlatform={event.video_platform}
+              videoState={event.video_state || 'waiting'}
+              sessionStartedAt={event.session_started_at}
+              eventDate={event.event_date}
+              isAdmin={canEdit}
+              onSessionStart={handleStartSession}
+              darkMode={darkMode}
+            />
+          )}
+
+          {event.description && (
+            <div className={`mb-6 p-4 rounded-xl ${darkMode ? 'bg-[#1a1a1e]' : 'bg-white border border-gray-200'}`}>
+              <h2 className={`text-sm font-medium mb-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Описание</h2>
+              <p className={`text-base ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{event.description}</p>
+            </div>
+          )}
+
+          <div className={`mb-6 p-4 rounded-xl ${darkMode ? 'bg-[#1a1a1e]' : 'bg-white border border-gray-200'}`}>
+            <h2 className={`text-sm font-medium mb-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+              {event.time_voting_enabled ? 'Голосование за время' : 'Дата и время'}
+            </h2>
+            {event.time_voting_enabled ? (
+              <p className={`text-base ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>🗳️ Время выбирается голосованием</p>
+            ) : (
+              <p className={`text-base font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>{formatEventDate(event.event_date)}</p>
+            )}
+          </div>
+
+          {event.time_voting_enabled && (
+            <div className="mb-6">
+              <TimeVoting roomId={roomId} event={event} darkMode={darkMode} isOwner={isOwner} canEdit={canEdit} />
+            </div>
+          )}
+
+          <div className={`mb-6 p-4 rounded-xl ${darkMode ? 'bg-[#1a1a1e]' : 'bg-white border border-gray-200'}`}>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Участники</h2>
+              <button onClick={() => setShowAttendeesModal(true)} className={`text-sm ${darkMode ? 'text-[#a78bfa]' : 'text-[#8b5cf6]'}`}>Все</button>
+            </div>
+            <div className="flex items-center gap-6">
+              <div className="flex flex-col items-center">
+                <span className={`text-2xl font-bold ${darkMode ? 'text-green-400' : 'text-green-600'}`}>{attendees.going?.length || 0}</span>
+                <span className="text-xs">Идут</span>
+              </div>
+              <div className="flex flex-col items-center">
+                <span className={`text-2xl font-bold ${darkMode ? 'text-yellow-400' : 'text-yellow-600'}`}>{attendees.maybe?.length || 0}</span>
+                <span className="text-xs">Возможно</span>
+              </div>
+              <div className="flex flex-col items-center">
+                <span className={`text-2xl font-bold ${darkMode ? 'text-red-400' : 'text-red-600'}`}>{attendees.declined?.length || 0}</span>
+                <span className="text-xs">Не идут</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex gap-3 mb-6">
+            <button onClick={() => handleAttend('going')} className={getBtn('going')} disabled={actionLoading}>{userStatus === 'going' ? '✓ Иду' : 'Иду'}</button>
+            <button onClick={() => handleAttend('maybe')} className={getBtn('maybe')} disabled={actionLoading}>{userStatus === 'maybe' ? '✓ Возможно' : 'Возможно'}</button>
+            <button onClick={() => handleAttend('declined')} className={getBtn('declined')} disabled={actionLoading}>{userStatus === 'declined' ? '✓ Не иду' : 'Не иду'}</button>
+          </div>
+
+          {canEdit && (
+            <div className="space-y-2">
+              <button onClick={handleRemind} disabled={actionLoading} className={`w-full py-3 px-4 rounded-xl font-medium ${darkMode ? 'bg-[#2a2a30] text-gray-300 hover:bg-[#3f3f46]' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                🔔 Напомнить
+              </button>
+              <button onClick={handleRestartSession} disabled={actionLoading} className={`w-full py-3 px-4 rounded-xl font-medium ${darkMode ? 'bg-[#2a2a30] text-yellow-400 hover:bg-[#3f3f46]' : 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100 border border-yellow-200'}`}>
+                🔄 Перезапустить событие
+              </button>
+              <button onClick={handleDeleteEvent} disabled={actionLoading} className={`w-full py-3 px-4 rounded-xl font-medium ${darkMode ? 'text-red-400 hover:text-red-300 border border-red-900/30' : 'text-red-600 hover:text-red-700 border border-red-200'}`}>
+                🗑️ Удалить
+              </button>
+            </div>
+          )}
+        </main>
+      </div>
+
+      <EditEventModal show={showEditModal} onClose={() => setShowEditModal(false)} onSubmit={handleUpdateEvent} event={event} loading={actionLoading} darkMode={darkMode} />
+      <AttendeesModal show={showAttendeesModal} onClose={() => setShowAttendeesModal(false)} roomId={roomId} eventId={eventId} eventName={event?.name} darkMode={darkMode} />
+    </div>
+  )
+}
